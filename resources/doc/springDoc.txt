@@ -1,0 +1,289 @@
+spring form
+
+spring-form.tld(in spring-webmvc) used for spring form tags
+uses
+Evaluate errors
+set themes
+Deliver internationalization messages
+
+form tag - data binding to objects
+
+creating form
+1. import form tag library in jsp
+
+<form:form commandName="aNewAccount">
+
+	First Name: <form:input type="text" path="firstName" name="firstName"/>
+    <input type="submit" value="submit"/>
+
+</form:form>
+
+
+2. create a regular pojo java class.Add properties and getters and setters.
+
+
+
+
+3. create controller
+public class MyController {
+	@RequestMapping(vlaue="/createAccount")
+	public String createAccount(@ModelAttribute("aNewAccount") Account account)
+	{
+		sop(account.getFirstName);
+		return ""
+	}
+
+}
+#########################################################################################################
+Form Validation
+
+1. adding dependence
+
+	a.grID: javax.validation
+	b.grId: org.hiberanator
+
+
+2. use annotaion in pojo.
+
+public class Account{
+
+@size(min=5, max=10)
+private String firstName;
+
+@size(min=5, max=10)
+private String lastName;
+
+@NotNull @ Min(15)
+private String age;
+
+@Email
+private String email;
+}
+
+
+3. create controller
+public class MyController {
+	@RequestMapping(vlaue="/createAccount")
+	public String createAccount(@Valid @ModelAttribute("aNewAccount") Account account, Binding Result result)
+	{
+		if(result.hasErrors()){
+			sop("Form has errors");
+		    return "errorPage"
+		}
+		
+		sop("Form validated");
+		sop(account.getFirstName());
+		return "createAccount"
+	}
+
+}
+
+4.set form errors tag
+
+<form:form commandName="aNewAccount">
+
+	First Name: <form:input type="text" path="firstName" name="firstName"/>
+	<form:errors path="firstName" cssClass="error"/>
+    <input type="submit" value="submit"/>
+
+</form:form>
+
+Note: error message is shown where form:errors tag is used. The message is generated automatically. How to show some custom message.
+
+#######################################################################################################
+
+Narrowing http request to particular http request.
+
+@RequestMapping(vlaue="/createAccount", method=RequestedMethod.POST)
+
+########################################################################################################################
+
+Uploading files
+
+1. Add dependency
+
+ grId: commons-fileupload
+
+2. Setting Form
+
+<form method="post" action="handleForm" encrypt="multipart/form-data">
+	<input type="file" value="file"/>
+	<input type="submit" value="submit"/>
+
+</form:form>
+
+3. include bean for multipart in mydemo.xml
+
+<bean id="ultipartResolver" class="org.sprignframework.web.multipart........">
+<property name="maxUploadSize" value="5555210">
+</bean>
+
+4. create controller
+public class MyController {
+	@RequestMapping(vlaue="/handleForm")
+	public String handleForm(@RequestParam("file") MultipartFile file)
+	{
+		try(!file.isEmpty()){
+			byte[] bytes = file.getBytes();
+			FileOutputStream fos = new FileOutputStream("part to save file")
+			fos.write(bytes);
+			fos.close();
+			sop("file saved successfully");
+			return "operationComplete";
+			
+		}
+		
+		else{
+		  sop("error");
+		}
+	}
+
+}
+
+###################################################################################
+
+Spring mvc features
+
+1. serving static files
+2. redirect
+3. Spring Model
+4. sessions and cookies
+
+1. serving static files
+
+a. create resources folder in webapp, put some files in this folder.
+b. edit myconfig.xml 
+<mvc:resources location="/resources/" mapping="/myResources/*" />
+
+NOTE: mvc namespace should be available
+      If subfolder is also included, location="/resources/" mapping="/myResources/**"
+	  
+2. redirect
+
+to redirect use:  return "redirect:accConfirm";
+Note: redirect will send a new get request to new url.
+	  request objects will not be accessible to redirected controller.
+
+3. Spring Model
+
+adding model attributes before any handle method run
+
+public class MyController {
+
+	@RequestMapping(vlaue="/getQuote")
+		public String createAccount(Model model)
+		{
+		  /////////////////
+		  return "quote";
+		}
+
+	@ModelAttribute
+		public void setUserDetails(@RequestParam ("userName") String userName ,Model model)
+		{
+		  model.addAttribute("userName", userName);
+		  String userRole = "undefined";
+		  model.addAttribute("userRole", userRole);
+		}
+}
+
+4. sessions and cookies
+
+Here a NewAccount is a session object and it will exist even if we redirect.
+  @controller
+  @sessionAttributes("aNewAccount")
+  public class MyController {
+
+	@ModelAttribute
+		public void addAccountToModel(Model model)
+		{
+		  if(!model.containsAttribute("aNewAccount"))
+		  {
+		   Account a = new Account();
+		   model.Attribute("aNewAccount",a);
+		  }
+		  model.addAttribute("userName", userName);
+		  String userRole = "undefined";
+		  model.addAttribute("userRole", userRole);
+		}
+		
+		@RequestMapping(vlaue="/getQuote")
+		public String createAccount(Model model)
+		{
+		  /////////////////
+		  return "quote";
+		}
+		
+}
+
+using cookies
+
+@controller
+  public class MyController {
+
+	   @RequestMapping(value="/addcookie")
+		public void addCookie(HttpServletResponse response)
+		{   
+		    // same as in java no spring help
+			response.addCookie(new Cookie("randomCookie","aCookieAdded"));
+			return "demopage"
+		}
+		
+		@RequestMapping(value="/getCookie")
+		public void getCookie(@CookieValue("myRandomCookie") String myCookie)
+		{
+		
+		}
+}
+
+###############################################################################################
+
+Handler methods params
+
+common arguments method
+
+@ReuestParam
+@RequestHeader
+@RequestBody
+@ModelAttribute
+
+common return types
+
+String 
+Model
+ModelAndView
+View
+
+
+#############################################################
+
+Matching request based on URL parameters
+
+now request will be mapped only if "customParam" parameter is present in the request.
+ @RequestMapping(value="/getQuote",params="customParam"){
+		public void myController(HttpServletResponse response)
+		{
+           //
+		   return "quote";
+		}
+}
+
+Note: to make more restricted mapping use params="customParam=myValue"
+
+Matching request based on Headers
+
+now request will be mapped only if "X-API-KEY" header is present in the request.
+ @RequestMapping(value="/getQuote",headers="X-API-KEY=customValue"){
+		public void myController(HttpServletResponse response)
+		{
+           //
+		   return "quote";
+		}
+}
+
+
+
+
+
+
+
+

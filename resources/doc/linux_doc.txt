@@ -1,0 +1,615 @@
+
+1
+
+const int x;          // x is a constant data variable
+int const x;          // x is a constant data variable
+
+const int* x;         // x is a non-constant pointer to constant data
+int const* x;         // x is a non-constant pointer to constant data 
+
+int*const x;          // x is a constant pointer to non-constant data
+
+const int*const x;    // x is a constant pointer to constant data
+
+And finally, it is possible to combine different type qualifiers. For example a volatile const int* is a non-constant, non-volatile pointer to volatile const data. Once again we have the wonderful option to mix the order of these to confuse, so we can also write volatile int const * or int volatile const * etc and it all means the same.
+
+
+
+2
+
+#define REG(x) (*((volatile unsigned int *)(x)))
+const int*const x; means a constant pointer pointing at a constant int.
+
+3
+TEST
+
+#DEFINE BASE (unsigned cons int*)0x0038
+volatile unsigned cons int* ptr;
+*ptr = BASE;
+set_bit(5,*ptr);
+
+
+
+
+
+synchronization
+http://www.makelinux.net/books/lkd2/ch09lev1sec2
+
+
+1. Atomic variable
+
+it is never possible for the two atomic operations to occur on the same variable concurrently
+
+Atomic Integer Operations
+he atomic integer methods operate on a special data type, atomic_t.
+
+Defining an atomic_t is done in the usual manner. Optionally, you can set it to an initial value:
+
+atomic_t v;                   /* define v */
+atomic_t u = ATOMIC_INIT(0);     /* define u and initialize it to zero */
+
+Operations are all simple:
+
+atomic_set(&v, 4);     /* v = 4 (atomically) */
+atomic_add(2, &v);     /* v = v + 2 = 6 (atomically) */
+atomic_inc(&v);        /* v = v + 1 = 7 (atomically) */
+
+If you ever need to convert an atomic_t to an int, use atomic_read():
+
+printk("%d\n", atomic_read(&v)); /* will print "7" */
+
+A common use of the atomic integer operations is to implement counters. Protecting a sole counter with a complex locking scheme is silly, so instead developers use atomic_inc() and atomic_dec(), which are much lighter in weight.
+
+Another use of the atomic integer operators is atomically performing an operation and testing the result. A common example is the atomic decrement and test:
+
+int atomic_dec_and_test(atomic_t *v)
+
+This function decrements by one the given atomic value. If the result is zero, it returns true; otherwise, it returns false. A full listing of the standard atomic integer operations (those found on all architectures) is in Table 9.1. All the operations implemented on a specific architecture can be found in <asm/atomic.h>.
+
+Atomic Integer Operation
+
+Description
+
+ATOMIC_INIT(int i)
+
+At declaration, initialize an atomic_t to i
+
+int atomic_read(atomic_t *v)
+
+Atomically read the integer value of v
+
+void atomic_set(atomic_t *v, int i)
+
+Atomically set v equal to i
+
+void atomic_add(int i, atomic_t *v)
+
+Atomically add i to v
+
+void atomic_sub(int i, atomic_t *v)
+
+Atomically subtract i from v
+
+void atomic_inc(atomic_t *v)
+
+Atomically add one to v
+
+void atomic_dec(atomic_t *v)
+
+Atomically subtract one from v
+
+int atomic_sub_and_test(int i, atomic_t *v)
+
+Atomically subtract i from v and return true if the result is zero; otherwise false
+
+int atomic_add_negative(int i, atomic_t *v)
+
+Atomically add i to v and return true if the result is negative; otherwise false
+
+int atomic_dec_and_test(atomic_t *v)
+
+Atomically decrement v by one and return true if zero; false otherwise
+
+int atomic_inc_and_test(atomic_t *v)
+
+Atomically increment v by one and return true if the result is zero; false otherwise
+
+Atomic Bitwise Operations
+
+In addition to atomic integer operations, the kernel also provides a family of functions that operate at the bit level. Not surprisingly, they are architecture specific and defined in <asm/bitops.h>.
+
+For example, assume you issue two atomic bit operations: Initially set the bit and then clear the bit. Without atomic operations, the bit may end up cleared, but it may never have been set. The set operation could occur simultaneously with the clear operation and fail. The clear operation would succeed, and the bit would emerge cleared as intended. With atomic operations, however, the set would actually occurthere would be a moment in time when a read would show the bit as setand then the clear would execute and the bit be zero.
+
+
+2 Spin Locks
+
+Although it would be nice if every critical region consisted of code that did nothing more complicated than incrementing a variable, reality is much crueler. In real life, critical regions can span multiple functions. For example, it is often the case that data must be removed from one structure, formatted and parsed, and added to another structure. This entire operation must occur atomically; it must not be possible for other code to read from or write to either structure before its update is done. Because simple atomic operations are clearly incapable of providing the needed protection in such a complex scenario, a more general method of synchronization is needed.
+
+The most common lock in the Linux kernel is the spin lock. A spin lock is a lock that can be held by at most one thread of execution. If a thread of execution attempts to acquire a spin lock while it is contended (already held), the thread busy loop spins waiting for the lock to become available. If the lock is not contended, the thread can immediately acquire the lock and continue. The spinning prevents more than one thread of execution from entering the critical region at any one time. Note that the same lock can be used in multiple locations, so all access to a given data structure, for example, can be protected and synchronized.
+The fact that a contended spin lock causes threads to spin (essentially wasting processor time) while waiting for the lock to become available is important. This behavior is the point of the spin lock. It is not wise to hold a spin lock for a long time. This is the nature of the spin lock: a lightweight single-holder lock that should be held for short durations. An alternative behavior when the lock is contended is to put the current thread to sleep and wake it up when it becomes available. Then the processor can go off and execute other code. 
+The next section covers semaphores, which provide a lock that makes the waiting thread sleep, rather than spin, when contended.
+
+Spin locks are architecture dependent and implemented in assembly. The architecture-dependent code is defined in <asm/spinlock.h>. The actual usable interfaces are defined in <linux/spinlock.h>. The basic use of a spin lock is
+
+spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
+
+spin_lock(&mr_lock);
+/* critical region     */
+spin_unlock(&mr_lock);
+
+Warning: if you attempt to acquire a lock you already hold, you will spin, waiting for yourself to release the lock. But because you are busy spinning, you will never release the lock and you will deadlock. Be careful!
+
+Using spinlocks in interrupt handlers.
+
+Spin locks can be used in interrupt handlers, whereas semaphores cannot be used because they sleep. If a lock is used in an interrupt handler, you must also disable local interrupts (interrupt requests on the current processor) before obtaining the lock. Otherwise, it is possible for an interrupt handler to interrupt kernel code while the lock is held and attempt to reacquire the lock. The interrupt handler spins, waiting for the lock to become available. The lock holder, however, does not run until the interrupt handler completes. This is an example of the double-acquire deadlock.
+
+ote that you need to disable interrupts only on the current processor. If an interrupt occurs on a different processor, and it spins on the same lock, it does not prevent the lock holder (which is on a different processor) from eventually releasing the lock.
+
+The kernel provides an interface that conveniently disables interrupts and acquires the lock. Usage is
+
+spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
+unsigned long flags;
+
+spin_lock_irqsave(&mr_lock, flags);
+/* critical region ... */
+spin_unlock_irqrestore(&mr_lock, flags);
+
+The routine spin_lock_irqsave() saves the current state of interrupts, disables them locally, and then obtains the given lock. Conversely, spin_unlock_irqrestore() unlocks the given lock and returns interrupts to their previous state. This way, if interrupts were initially disabled, your code would not erroneously enable them, but instead keep them disabled.
+
+If you always know before the fact that interrupts are initially enabled, there is no need to restore their previous state. You can unconditionally enable them on unlock. In those cases, spin_lock_irq() and spin_unlock_irq() are optimal:
+
+spinlock_t mr_lock = SPIN_LOCK_UNLOCKED;
+
+spin_lock_irq(&mr_lock);
+/* critical section ... */
+spin_unlock_irq(&mr_lock);
+
+Debugging Spin Locks
+The configure option CONFIG_DEBUG_SPINLOCK enables a handful of debugging checks in the spin lock code.
+
+Other Spin Lock Methods
+The method spin_trylock() attempts to obtain the given spin lock. If the lock is contended, rather than spin and wait for the lock to be released, the function immedi-ately returns zero. If it succeeds in obtaining the lock, it returns nonzero. Similarly, spin_is_locked() returns nonzero if the given lock is currently acquired. Otherwise, it returns zero. In neither case does this function actually obtain the lock.
+
+Reader-Writer Spin Locks
+
+Sometimes, lock usage can be clearly divided into readers and writers. For example, consider a list that is both updated and searched. When the list is updated (written to), it is important that no other threads of execution concurrently write to or read from the list. Writing demands mutual exclusion. On the other hand, when the list is searched (read from), it is only important that nothing else write to the list. Multiple concurrent readers are safe so long as there are no writers.
+When a data structure is neatly split into reader/writer paths like this, it makes sense to use a locking mechanism that provides similar semantics. In this case, Linux provides reader-writer spin locks. Reader-writer spin locks provide separate reader and writer variants of the lock. One or more readers can concurrently hold the reader lock. The writer lock, conversely, can be held by at most one writer with no concurrent readers. Reader/writer locks are sometimes called shared/exclusive or concurrent/exclusive locks because the lock is available in a shared (for readers) and an exclusive (for writers) form.
+
+Usage is similar to spin locks. The reader-writer spin lock is initialized via
+
+rwlock_t mr_rwlock = RW_LOCK_UNLOCKED;
+
+Then, in the reader code path:
+
+read_lock(&mr_rwlock);
+/* critical section (read only) ... */
+read_unlock(&mr_rwlock);
+
+Finally, in the writer code path:
+
+write_lock(&mr_rwlock);
+/* critical section (read and write) ... */
+write_unlock(&mr_lock);
+
+Note
+If the line between your readers and writers is muddled, it might be an indication that you do not need to use reader-writer locks. In that case, a normal spin lock is optimal.
+A final important consideration in using the Linux reader-writer spin locks is that they favour readers over writers. If the read lock is held and a writer is waiting for exclusive access, readers that attempt to acquire the lock will continue to succeed. The spinning writer does not acquire the lock until all readers release the lock. Therefore, a sufficient number of readers can starve pending writers. This is important to keep in mind when designing your locking.
+
+3. Semaphores
+
+Semaphores in Linux are sleeping locks. When a task attempts to acquire a semaphore that is already held, the semaphore places the task onto a wait queue and puts the task to sleep. The processor is then free to execute other code. When the processes[3] holding the semaphore release the lock, one of the tasks on the wait queue is awakened so that it can then acquire the semaphore.
+
+Let's jump back to the door and key analogy. When a person reaches the door, he can grab the key and enter the room. The big difference lies in what happens when another dude reaches the door and the key is not available. In this case, instead of spinning, the fellow puts his name on a list and takes a nap. When the person inside the room leaves, he checks the list at the door. If anyone's name is on the list, he goes over to the first name and gives him a playful jab in the chest, waking him up and allowing him to enter the room. In this manner, the key (read: semaphore) continues to ensure that there is only one person (read: thread of execution) inside the room (read: critical region) at one time. If the room is occupied, instead of spinning, the person puts his name on a list (read: wait queue) and takes a nap (read: blocks on the wait queue and goes to sleep), allowing the processor to go off and execute other code. This provides better processor utilization than spin locks because there is no time spent busy looping, but semaphores have much greater overhead than spin locks. Life is always a trade-off.
+
+You can draw some interesting conclusions from the sleeping behavior of semaphores:
+
+1. Because the contending tasks sleep while waiting for the lock to become available, semaphores are well suited to locks that are held for a long time.
+2. Conversely, semaphores are not optimal for locks that are held for very short periods because the overhead of sleeping, maintaining the wait queue, and waking back up can easily outweigh the total lock hold time.
+3. You can (although you may not want to) sleep while holding a semaphore because you will not deadlock when another process acquires the same semaphore.
+4. You cannot hold a spin lock while you acquire a semaphore, because you might have to sleep while waiting for the semaphore, and you cannot sleep while holding a spin lock.
+
+ Whereas spin locks permit at most one task to hold the lock at a time, the number of permissible simultaneous holders of semaphores can be set at declaration time. This value is called the usage count or simply the count. The most common value is to allow, like spin locks, only one lock holder at a time. In this case, the count is equal to one and the semaphore is called either a binary semaphore (because it is either held by one task or not held at all) or a mutex (because it enforces mutual exclusion).
+ 
+  Alternatively, the count can be initialized to a nonzero value greater than one. In this case, the semaphore is called a counting semaphore, and it allows at most count holders of the lock at a time. Counting semaphores are not used to enforce mutual exclusion because they allow multiple threads of execution in the critical region at once. Instead, they are used to enforce limits in certain code.
+  
+  Using Semaphores
+  The function down_interruptible() attempts to acquire the given semaphore. If it fails, it sleeps in the TASK_INTERRUPTIBLE state. Recall from Chapter 3 that this process state implies that a task can be awakened with a signal, which is generally a good thing.
+  If the task receives a signal while waiting for the semaphore, it is awakened and down_interruptible() returns -EINTR
+  
+  You can use down_trylock() to try to acquire the given semaphore with blocking. If the semaphore is already held, the function immediately returns nonzero. Otherwise, it returns zero and you successfully hold the lock.
+
+To release a given semaphore, call up(). Consider an example:
+
+/* define and declare a semaphore, named mr_sem, with a count of one */
+static DECLARE_MUTEX(mr_sem);
+
+/* attempt to acquire the semaphore ... */
+if (down_interruptible(&mr_sem)) {
+        /* signal received, semaphore not acquired ... */
+}
+
+/* critical region ... */
+
+/* release the given semaphore */
+up(&mr_sem);
+
+
+
+Table 9.6. What to Use: Spin Locks Versus Semaphores
+
+Requirement                                      Recommended Lock
+Low overhead locking                          Spin lock is preferred
+Short lock hold time                          Spin lock is preferred
+Long lock hold time                           Semaphore is preferred
+Need to lock from interrupt context           Spin lock is required
+Need to sleep while holding lock              Semaphore is required
+
+
+Chapter 10. Timers and Time Management
+
+The passing of time is very important to the kernel. A large number of kernel functions are time driven, as opposed to event driven[1]. Some of these functions are periodic, such as balancing the scheduler run queues or refreshing the screen. They occur on a fixed schedule, such as 100 times per second.
+Events that occur periodically say, every 10 milliseconds are driven by the system timer. The system timer is a programmable piece of hardware that issues an interrupt at a fixed frequency. The interrupt handler for this timer called the timer interrupt updates the system time and performs periodic work. 
+
+The other focus is dynamic timers the facility used to schedule events that run once after a specified time has elapsed. For example, the floppy device driver uses a timer to shut off the floppy drive motor after a specified period of inactivity. The kernel can create and destroy timers dynamically.
+
+The Tick Rate: HZ
+The frequency of the system timer (the tick rate) is programmed on system boot based on a static preprocessor define, HZ. The value of HZ differs for each supported architecture. In fact, on some supported architectures, it even differs between machine types.
+
+The kernel defines the value in <asm/param.h>. The tick rate has a frequency of HZ hertz and a period of 1/HZ seconds. For example, in include/asm-i386/param.h, the i386 architecture defines:
+
+#define HZ 1000        /* internal kernel time frequency */
+
+Jiffies
+The global variable jiffies holds the number of ticks that have occurred since the system booted. On boot, the kernel initializes the variable to zero, and it is incremented by one during each timer interrupt. Thus, because there are HZ timer interrupts in a second, there are HZ jiffies in a second. The system uptime is therefore jiffies/HZ seconds.
+
+The jiffies variable is declared in <linux/jiffies.h> as
+extern unsigned long volatile jiffies;
+In the next section, we will look at its actual definition, which is a bit peculiar. For now, let's look at some sample kernel code. The following code converts from seconds to a unit of jiffies:
+
+(seconds * HZ)
+
+Likewise, this code converts from jiffies to seconds:
+
+(jiffies / HZ)
+
+for example:
+unsigned long time_stamp = jiffies;           /* now */
+unsigned long next_tick = jiffies +_1;        /* one tick from now */
+unsigned long later = jiffies + 5*HZ;         /* five seconds from now */
+
+Internal Representation of Jiffies
+The jiffies variable has always been an unsigned long, and therefore 32 bits in size on 32-bit architectures and 64-bits on 64-bit architectures.
+
+With a tick rate of 100, a 32-bit jiffies variable would overflow in about 497 days. With HZ increased to 1000, however, that overflow now occurs in just 49.7 days! If jiffies were stored in a 64-bit variable on all architectures, then for any reasonable HZ value the jiffies variable would never overflow in anyone's lifetime.
+
+As you previously saw, jiffies is defined as an unsigned long:
+extern unsigned long volatile jiffies;
+
+A second variable is also defined in <linux/jiffies.h>:
+extern u64 jiffies_64;
+
+The ld(1) script used to link the main kernel image (arch/i386/kernel/vmlinux.lds.S on x86) then overlays the jiffies variable over the start of the jiffies_64 variable:
+
+jiffies = jiffies_64;
+
+Thus, jiffies is the lower 32 bits of the full 64-bit jiffies_64 variable. Code can continue to access the jiffies variable exactly as before. Because most code uses jiffies simply to measure elapses in time, most code cares about only the lower 32 bits.
+Code that accesses jiffies simply reads the lower 32 bits of jiffies_64. The function get_jiffies_64() can be used to read the full 64-bit value[5]. Such a need is rare; consequently, most code simply continues to read the lower 32 bits directly via the jiffies variable.
+
+On 64-bit architectures, jiffies_64 and jiffies refer to the same thing. Code can either read jiffies or call get_jiffies_64() because both actions have the same effect.
+
+Look at an example of a wraparound:
+
+unsigned long timeout = jiffies + HZ/2;        /* timeout in 0.5s */
+
+/* do some work ... */
+
+/* then see whether we took too long */
+if (timeout > jiffies) {
+        /* we did not time out, good ... */
+} else {
+        /* we timed out, error ... */
+}
+
+Multiple potential overflow issues are here, but let's study one of them: Consider what happens if jiffies wrapped back to zero after setting timeout. Then the first conditional would fail because the jiffies value would be smaller than timeout despite logically being larger. Conceptually, the jiffies value should be a very large numberlarger than timeout. Because it overflowed its maximum value, however, it is now a very small valueperhaps only a handful of ticks over zero. Because of the wraparound, the results of the if statement are switched. Whoops!
+
+Thankfully, the kernel provides four macros for comparing tick counts that correctly handle wraparound in the tick count. They are in <linux/jiffies.h>:
+
+#define time_after(unknown, known) ((long)(known) - (long)(unknown) < 0) 
+#define time_before(unknown, known) ((long)(unknown) - (long)(known) < 0)
+#define time_after_eq(unknown, known) ((long)(unknown) - (long)(known) >= 0) 
+#define time_before_eq(unknown, known) ((long)(known) - (long)(unknown) >= 0)
+
+The unknown parameter is typically jiffies and the known parameter is the value against which you want to compare.
+
+The time_after(unknown, known) macro returns true if time unknown is after time known; otherwise, it returns false. The time_before(unknown, known) macro returns true if time unknown is before time known; otherwise, it returns false. The final two macros perform identically to the first two, except they also return true if the parameters are equal.
+
+The timer-wraparound-safe version of the previous example would look like this:
+
+unsigned long timeout = jiffies + HZ/2;        /* timeout in 0.5s */
+
+/* ... */
+if (time_before(jiffies, timeout)) {
+        /* we did not time out, good ... */
+} else {
+        /* we timed out, error ... */
+}
+
+
+User-Space and HZ
+
+In kernels earlier than 2.6, changing the value of HZ resulted in user-space anomalies. This happened because values were exported to user-space in units of ticks-per-second. As these interfaces became permanent, applications grew to rely on a specific value of HZ. Consequently, changing HZ would scale various exported values by some constantwithout user-space knowing! Uptime would read 20 hours when it was in fact two!
+
+To prevent such problems, the kernel needs to scale all exported jiffies values. It does this by defining USER_HZ, which is the HZ value that user-space expects. On x86, because HZ was historically 100, USER_HZ is 100. The macro jiffies_to_clock_t() is then used to scale a tick count in terms of HZ to a tick count in terms of USER_HZ. The macro used depends on whether USER_HZ and HZ are integer multiples of themselves. If so, the macro is rather simple:
+
+#define jiffies_to_clock_t(x)                ((x) / (HZ / USER_HZ))
+
+A more complicated algorithm is used if the values are not integer multiples.
+
+Finally, the function jiffies_64_to_clock_t() is provided to convert a 64-bit jiffies value from HZ to USER_HZ units.
+
+These functions are used anywhere a value in ticks-per-seconds needs to be exported to user-space. Example:
+
+unsigned long start;
+unsigned long total_time;
+
+start = jiffies;
+/* do some work ... */
+total_time = jiffies - start;
+printk("That took %lu ticks\n", jiffies_to_clock_t(total_time));
+
+Using Timers
+
+Timers are represented by struct timer_list, which is defined in <linux/timer.h>:
+
+struct timer_list {
+        struct list_head entry;           /* entry in linked list of timers */
+        unsigned long expires;            /* expiration value, in jiffies */
+        spinlock_t lock;                  /* lock protecting this timer */
+        void (*function)(unsigned long);  /* the timer handler function */
+        unsigned long data;               /* lone argument to the handler */
+        struct tvec_t_base_s *base;       /* internal timer field, do not touch */
+};
+
+he first step in creating a timer is defining it:
+
+struct timer_list my_timer;
+
+Next, the timer's internal values must be initialized. This is done via a helper function and must be done prior to calling any timer management functions on the timer:
+
+init_timer(&my_timer);
+
+Now you fill out the remaining values as required:
+
+my_timer.expires = jiffies + delay;    /* timer expires in delay ticks */
+my_timer.data = 0;                     /* zero is passed to the timer handler */
+my_timer.function = my_function;       /* function to run when timer expires */
+
+The my_timer.expires value specifies the timeout value in absolute ticks. When the current jiffies count is equal to or greater than my_timer.expires, the handler function my_timer.function is run with the lone argument of my_timer.data. As you can see from the timer_list definition, the function must match this prototype:
+
+void my_timer_function(unsigned long data);
+
+The data parameter enables you to register multiple timers with the same handler, and differentiate between them via the argument. If you do not need the argument, you can simply pass zero (or any other value).
+
+Finally, you activate the timer:
+
+add_timer(&my_timer);
+
+
+Sometimes you might need to modify the expiration of an already active timer. The kernel implements a function, mod_timer(), which changes the expiration of a given timer:
+
+mod_timer(&my_timer, jiffies + new_delay);  /* new expiration */
+
+The mod_timer() function can operate on timers that are initialized but not active, too. If the timer is inactive, mod_timer() activates it. The function returns zero if the timer was inactive and one if the timer was active. In either case, upon return from mod_timer(), the timer is activated and set to the new expiration.
+
+If you need to deactivate a timer prior to its expiration, use the del_timer() function:
+
+del_timer(&my_timer);
+
+The function works on both active and inactive timers. If the timer is already inactive, the function returns zero; otherwise, the function returns one. Note that you do not need to call this for timers that have expired because they are automatically deactivated.
+
+
+
+A potential race condition that must be guarded against exists when deleting timers. When del_timer() returns, it guarantees only that the timer is no longer active (that is, that it will not be executed in the future). On a multiprocessing machine, however, the timer handler might already be executing on another processor. To deactivate the timer and wait until a potentially executing handler for the timer exits, use del_timer_sync():
+
+del_timer_sync(&my_timer);
+
+
+
+Interrupt Handling
+
+When the interrupt happens, Linux must first determine its source by reading the interrupt status register of the system's programmable interrupt controllers. It then translates that source into an offset into the irq_action vector. So, for example, an interrupt on pin 6 of the interrupt controller from the floppy controller would be translated into the seventh pointer in the vector of interrupt handlers. If there is not an interrupt handler for the interrupt that occurred then the Linux kernel will log an error, otherwise it will call into the interrupt handling routines for all of the irqaction data structures for this interrupt source.
+
+When the device driver's interrupt handling routine is called by the Linux kernel it must efficiently work out why it was interrupted and respond. To find the cause of the interrupt the device driver would read the status register of the device that interrupted. The device may be reporting an error or that a requested operation has completed. For example the floppy controller may be reporting that it has completed the positioning of the floppy's read head over the correct sector on the floppy disk. Once the reason for the interrupt has been determined, the device driver may need to do more work. If it does, the Linux kernel has mechanisms that allow it to postpone that work until later. This avoids the CPU spending too much time in interrupt mode.
+
+The interrupt handler itself is not a suitable place for all kind of actions. Long noncritical operations should be deferred, because while an interrupt handler is running, the signals on the corresponding IRQ line are temporarily ignored. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Some useful links
+
+1. http://www.tldp.org/LDP/tlk/tlk-toc.html : for linux internlas basic.
+2. http://www.makelinux.net/books/lkd2/?u=ch06lev1sec3  : Kernel internal details.
+
+
+
+
+
+
+
+##############################################################################################################################################
+
+
+
+														JAVA
+
+
+JAVA BEAN
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+Here is a simple JavaBean class example:
+
+import java.io.Serializable;
+
+public class AnswersBean implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private String answer1;
+
+    private String answer2;
+
+    private String answer3;
+
+    public String getAnswer1() {
+        return answer1;
+    }
+
+    public void setAnswer1(String answer1) {
+        this.answer1 = answer1;
+    }
+
+    public String getAnswer2() {
+        return answer2;
+    }
+
+    public void setAnswer2(String answer2) {
+        this.answer2 = answer2;
+    }
+
+    public String getAnswer3() {
+        return answer3;
+    }
+
+    public void setAnswer3(String answer3) {
+        this.answer3 = question3;
+    }
+
+}
+
+
+In your second Servlet you can create and populate your bean with the required information:
+
+
+
+package com.example;
+
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.ServletException;
+import java.io.IOException;
+
+import com.example.AnswersBean;
+
+public class Servlet2 extends HttpServlet {
+
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+                    throws ServletException, IOException {
+        String answer1 = request.getParameter("Q1");    // got from input 
+        String answer2 = request.getParameter("Q2");	// got from input 
+        String answer3 = request.getParameter("Q3");	// got from input 
+
+        // you may check if the answers exist and validate them
+
+        AnswersBean answersBean = new AnswersBean();
+        answersBean.setAnswer1(answer1);
+        answersBean.setAnswer2(answer2);
+        answersBean.setAnswer3(answer3);
+
+        // store bean in session
+        request.getSession().setAttribute("answers", answersBean);
+
+        // you now can forward to some view, for example some results.jsp
+        request.getRequestDispatcher("/results.jsp").forward(request, response);
+    }
+}
+
+
+Now in the third Servlet you can check if the session contains the bean:
+
+package com.example;
+
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.ServletException;
+import java.io.IOException;
+
+import com.example.AnswersBean;
+
+public class Servlet3 extends HttpServlet {
+
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+                    throws ServletException, IOException {
+        AnswersBean answers = request.getSession().getAttribute("answers");
+
+        if (answers == null) {
+            // no bean was set in session
+                    // do something
+        } else {
+            // there is a bean in session
+                    // do something
+        }
+
+        // you now can forward to some view, for example some foo.jsp
+        request.getRequestDispatcher("/foo.jsp").forward(request, response);
+
+        // or do something else
+    }
+}
+
+Or you can check the bean right inside some JSP page using Expression Language (EL) like this:
+
+<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core"%>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Answers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>
+    <c:choose>
+        <c:when test="${empty answers}">
+            <h3>There are currently no answers.</h3>
+        </c:when>
+        <c:otherwise>
+            <h3>First answer:  ${answers.question1}</h3>
+            <h3>Second answer: ${answers.question2}</h3> 
+            <h3>Third answer:  ${answers.question3}</h3>
+        </c:otherwise>
+    </c:choose>
+</body>
+</html>
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+
